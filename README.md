@@ -1,4 +1,4 @@
-# Vault Assist v0.1 — Minecraft 26.3 / Fabric
+# Vault Assist v0.1.1 — Minecraft 26.3 / Fabric
 
 **模式：沉重核心提示 + 玩家手动开锁。** 支持普通宝库和不祥宝库。客户端不自动使用钥匙、不发送额外交互包。
 
@@ -23,6 +23,8 @@
 ## 编译
 
 直接把整个源码 ZIP 上传到 GitHub 仓库解压后的根目录，推送 `main`，打开 **Actions → Build Fabric 26.3 → Run workflow**，构建成功后下载 Artifact。
+
+v0.1.1 修复 Gradle 配置：Minecraft 26.3 非混淆 Loom 插件使用 `implementation` 而不是 `modImplementation`，解决 `Could not find method modImplementation()`。
 
 本工程使用 Gradle **9.7.1**、Java **25**、Fabric Loom **1.18.2**，预设 Fabric API **0.162.0+26.3**。本地有 Gradle 的话执行 `gradle build`，结果位于 `build/libs/`。源码包不包含 Gradle Wrapper；GitHub Actions 会自动安装正确版本 Gradle。
 
