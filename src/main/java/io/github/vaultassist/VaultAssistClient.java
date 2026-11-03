@@ -67,7 +67,10 @@ public final class VaultAssistClient implements ClientModInitializer {
                 .resolve("config").resolve("vaultassist");
         loadStats();
         loadSettings();
-        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
+        // Check at both ends of the client tick. This is a low-risk fallback;
+        // it does not claim packet-level or sub-tick notification.
+        ClientTickEvents.START_CLIENT_TICK.register(mc -> tick(mc, "start"));
+        ClientTickEvents.END_CLIENT_TICK.register(mc -> tick(mc, "end"));
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
             dispatcher.register(literal("vaultassist")
                 .executes(ctx -> status())
@@ -91,7 +94,7 @@ public final class VaultAssistClient implements ClientModInitializer {
         );
     }
 
-    private void tick(Minecraft mc) {
+    private void tick(Minecraft mc, String phase) {
         if (mc.level == null || mc.player == null) { clearObservation(); return; }
         if (!enabled || mc.gui.screen() != null) return;
         ticks++;
@@ -115,45 +118,46 @@ public final class VaultAssistClient implements ClientModInitializer {
         long now = System.nanoTime();
         boolean same = pos.equals(observedPos) && dim.equals(observedDimension);
         boolean changed = !same || !id.equals(observedItem);
-        if (changed) {
-            observedAtNano = now;
-            log("DISPLAY", dim, pos, ominous, id, state, "", "client_observation");
-        }
-        // This event may be caused by another player. It is deliberately not counted as a win.
-        if (same && !state.equals(observedState) && state.toLowerCase(Locale.ROOT).contains("unlocking")) {
-            String sessionId = Instant.now().toString() + "_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ();
-            pending = new Pending(dim, pos.immutable(), ominous, observedItem, observedAtNano, now, sessionId);
-            long lagMs = Math.max(0, (now - observedAtNano) / 1_000_000);
-            log("UNLOCK_OBSERVED", dim, pos, ominous, observedItem, state,
-                    "session=" + sessionId + ";display_age_ms=" + lagMs,
-                    "not_proof_of_local_interaction");
-            say("检测到宝库开锁！展示物品=" + observedItem + "，请检查实际奖励后输入 /vaultassist hit 或 miss；无法判断时用 skip");
-        }
+        boolean newlyUnlocking = same && !state.equals(observedState)
+                && state.toLowerCase(Locale.ROOT).contains("unlocking");
+        if (changed) observedAtNano = now;
+        // Record current snapshot BEFORE checking the target. No disk writes on the
+        // critical path before sending the vanilla use-item interaction.
         observedPos = pos.immutable();
         observedDimension = dim;
         observedItem = id;
         observedState = state;
         observedOminous = ominous;
         String target = ominous ? ominousTarget : normalTarget;
-        if (id.equals(target)) {
-            if (changed) {
+        boolean targetVisible = id.equals(target);
+        if (targetVisible && autoEnabled) {
+            tryAutoOpen(mc, blockHit, pos, dim, ominous, id, state, phase);
+        }
+        if (changed) {
+            log("DISPLAY", dim, pos, ominous, id, state, "phase=" + phase, "client_observation");
+            if (targetVisible) {
                 say("§a" + (ominous ? "不祥" : "普通") + "宝库展示目标 " + target + "！" +
-                    (autoEnabled ? " §e准备自动使用钥匙" : " §7(自动开锁未开启)"));
-                log("TARGET_VISIBLE", dim, pos, ominous, id, state, "auto=" + autoEnabled, "preview_only");
+                        (autoEnabled ? " §e自动模式已开启" : " §7(自动开锁未开启)"));
+                log("TARGET_VISIBLE", dim, pos, ominous, id, state, "phase=" + phase + ";auto=" + autoEnabled, "preview_only");
+            } else {
+                say("§7" + (ominous ? "不祥" : "普通") + "宝库展示：" + id);
             }
-            if (autoEnabled) tryAutoOpen(mc, blockHit, pos, dim, ominous, id, state);
-        } else if (changed) {
-            say("§7" + (ominous ? "不祥" : "普通") + "宝库展示：" + id);
+        }
+        if (newlyUnlocking) {
+            String sessionId = Instant.now() + "_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ();
+            pending = new Pending(dim, pos.immutable(), ominous, id, observedAtNano, now, sessionId);
+            long ageMs = Math.max(0, (now - observedAtNano) / 1_000_000);
+            log("UNLOCK_OBSERVED", dim, pos, ominous, id, state,
+                    "session=" + sessionId + ";display_age_ms=" + ageMs + ";phase=" + phase,
+                    "not_proof_of_local_interaction");
+            say("检测到宝库开锁。需要统计实际奖励时再用 /vaultassist hit 或 miss；无法确认用 skip");
         }
     }
 
     private void tryAutoOpen(Minecraft mc, BlockHitResult blockHit, BlockPos pos,
-                             String dimension, boolean ominous, String id, String state) {
-        // The client never determines the server-side loot table outcome.
-        // Only the vanilla block interaction is requested; no packet spoofing.
+                             String dimension, boolean ominous, String id, String state, String phase) {
         if (mc.gameMode == null || mc.player == null || mc.level == null || mc.gui.screen() != null) return;
         if (mc.player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 25) return;
-        // Do not attempt if the vault is already unlocking or inactive.
         if (!state.equalsIgnoreCase("ACTIVE") && !state.equalsIgnoreCase("EJECTING")) return;
         String key = dimension + ":" + pos.getX() + ":" + pos.getY() + ":" + pos.getZ();
         if (attemptedVaults.contains(key)) return;
@@ -163,24 +167,29 @@ public final class VaultAssistClient implements ClientModInitializer {
         else if (mc.player.getOffhandItem().is(ominous ? Items.OMINOUS_TRIAL_KEY : Items.TRIAL_KEY))
             hand = InteractionHand.OFF_HAND;
         if (hand == null) {
-            // Don't spam chat each tick while waiting for a key.
             if (System.nanoTime() - lastNoticeAt > 5_000_000_000L) {
                 lastNoticeAt = System.nanoTime();
                 say("§e目标已出现，但主手/副手没有" + (ominous ? "不祥" : "普通") + "试炼钥匙；未操作");
             }
             return;
         }
-        attemptedVaults.add(key); // mark BEFORE interaction to prevent duplicate requests
-        long delayMs = Math.max(0L, (System.nanoTime() - observedAtNano) / 1_000_000L);
-        log("AUTO_INTERACT_SENT", dimension, pos, ominous, id, state,
-                "hand=" + hand + ";display_age_ms=" + delayMs, "client_interaction_not_loot_confirmation");
+        attemptedVaults.add(key);
+        long sendBeginNs = System.nanoTime();
+        long visibleAgeNs = Math.max(0, sendBeginNs - observedAtNano);
+        // IMPORTANT: send interaction before any CSV I/O or chat messages.
         try {
             mc.gameMode.useItemOn(mc.player, hand, blockHit);
+            long returnNs = System.nanoTime();
             mc.player.swing(hand);
-            say("§a已向服务器发送" + (ominous ? "不祥" : "普通") + "宝库交互请求；目标=" + id + "；展示延迟≈" + delayMs + "ms（非中奖保证）");
+            log("AUTO_INTERACT_SENT", dimension, pos, ominous, id, state,
+                    "hand=" + hand + ";phase=" + phase + ";display_age_ns=" + visibleAgeNs
+                    + ";call_duration_ns=" + Math.max(0, returnNs - sendBeginNs),
+                    "client_interaction_not_loot_confirmation");
+            say("§a已发送" + (ominous ? "不祥" : "普通") + "宝库交互请求；目标=" + id
+                    + "；观察到交互≈" + (visibleAgeNs / 1_000_000.0) + "ms（不是服务端真实延迟）");
         } catch (RuntimeException e) {
             log("AUTO_INTERACT_ERROR", dimension, pos, ominous, id, state, e.toString(), "client_error");
-            say("§c开锁交互发生错误：" + e.getClass().getSimpleName());
+            say("§c开锁交互异常：" + e.getClass().getSimpleName());
         }
     }
 
