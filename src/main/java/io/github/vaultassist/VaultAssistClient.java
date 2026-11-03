@@ -10,6 +10,9 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.InteractionHand;
+import java.util.HashSet;
+import java.util.Set;
 import net.minecraft.world.level.block.VaultBlock;
 import net.minecraft.world.level.block.entity.vault.VaultBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -29,15 +32,17 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 /**
- * All observations come from server-synchronised CLIENT state. The mod never issues
- * a use-item packet, switches items, or performs an automatic click.
- *
- * A detected UNLOCKING transition is an observation, NOT proof that the local player
- * was the one who opened the vault. The player must manually confirm the result.
+ * Observes server-synchronised client data and optionally sends one vanilla
+ * block-use interaction when the chosen display item appears. Server alone
+ * decides rewards; the visible preview is not a guaranteed drop.
  */
 public final class VaultAssistClient implements ClientModInitializer {
     private static final String PREFIX = "[宝库助手] ";
     private boolean enabled = true;
+    private boolean autoEnabled = false; // safe default: explicit opt-in required
+    private String normalTarget = "minecraft:emerald";
+    private String ominousTarget = "minecraft:heavy_core";
+    private final Set<String> attemptedVaults = new HashSet<>();
     private BlockPos observedPos;
     private String observedDimension = "";
     private String observedItem = "";
@@ -61,12 +66,20 @@ public final class VaultAssistClient implements ClientModInitializer {
         root = net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir()
                 .resolve("config").resolve("vaultassist");
         loadStats();
+        loadSettings();
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
             dispatcher.register(literal("vaultassist")
                 .executes(ctx -> status())
-                .then(literal("on").executes(ctx -> { enabled = true; say("已启用提示"); return 1; }))
-                .then(literal("off").executes(ctx -> { enabled = false; clearObservation(); say("已关闭提示"); return 1; }))
+                .then(literal("on").executes(ctx -> { enabled = true; saveSettings(); say("已启用宝库监控"); return 1; }))
+                .then(literal("off").executes(ctx -> { enabled = false; autoEnabled = false; saveSettings(); clearObservation(); say("已关闭监控和自动开锁"); return 1; }))
+                .then(literal("auto")
+                    .then(literal("on").executes(ctx -> { enabled = true; autoEnabled = true; saveSettings(); say("自动开锁已开启；请手持对应钥匙并对准未开过的宝库"); return 1; }))
+                    .then(literal("off").executes(ctx -> { autoEnabled = false; saveSettings(); say("自动开锁已关闭"); return 1; })))
+                .then(literal("target")
+                    .then(literal("normal").then(argument("item", StringArgumentType.word()).executes(ctx -> setTarget(false, StringArgumentType.getString(ctx, "item")))))
+                    .then(literal("ominous").then(argument("item", StringArgumentType.word()).executes(ctx -> setTarget(true, StringArgumentType.getString(ctx, "item"))))))
+                .then(literal("resetattempts").executes(ctx -> { attemptedVaults.clear(); say("本次游戏的自动开锁尝试记录已清空"); return 1; }))
                 .then(literal("status").executes(ctx -> status()))
                 .then(literal("stats").executes(ctx -> stats()))
                 .then(literal("hit").executes(ctx -> confirm(true)))
@@ -121,19 +134,93 @@ public final class VaultAssistClient implements ClientModInitializer {
         observedItem = id;
         observedState = state;
         observedOminous = ominous;
-        // 26.2: use LocalPlayer.sendSystemMessage(), as used by the user's
-        // already-working EarthMC Market project. Do not call obsolete Gui methods.
-        // Notify on changes only, avoiding chat spam during a steady display.
-        if (visible.is(Items.HEAVY_CORE)) {
+        String target = ominous ? ominousTarget : normalTarget;
+        if (id.equals(target)) {
             if (changed) {
-                mc.player.sendSystemMessage(Component.literal("§a[宝库助手] 展示：沉重核心！ §e请手动使用钥匙 §7(" +
-                        (ominous ? "不祥" : "普通") + "宝库)"));
-                log("TARGET_VISIBLE", dim, pos, ominous, id, state, "", "hint_only");
+                say("§a" + (ominous ? "不祥" : "普通") + "宝库展示目标 " + target + "！" +
+                    (autoEnabled ? " §e准备自动使用钥匙" : " §7(自动开锁未开启)"));
+                log("TARGET_VISIBLE", dim, pos, ominous, id, state, "auto=" + autoEnabled, "preview_only");
             }
+            if (autoEnabled) tryAutoOpen(mc, blockHit, pos, dim, ominous, id, state);
         } else if (changed) {
-            mc.player.sendSystemMessage(Component.literal("§7[宝库助手] " + (ominous ? "不祥" : "普通") +
-                    "宝库展示：" + id + " §8(只提示，不自动开锁)"));
+            say("§7" + (ominous ? "不祥" : "普通") + "宝库展示：" + id);
         }
+    }
+
+    private void tryAutoOpen(Minecraft mc, BlockHitResult blockHit, BlockPos pos,
+                             String dimension, boolean ominous, String id, String state) {
+        // The client never determines the server-side loot table outcome.
+        // Only the vanilla block interaction is requested; no packet spoofing.
+        if (mc.gameMode == null || mc.player == null || mc.level == null || mc.gui.screen() != null) return;
+        if (mc.player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 25) return;
+        // Do not attempt if the vault is already unlocking or inactive.
+        if (!state.equalsIgnoreCase("ACTIVE") && !state.equalsIgnoreCase("EJECTING")) return;
+        String key = dimension + ":" + pos.getX() + ":" + pos.getY() + ":" + pos.getZ();
+        if (attemptedVaults.contains(key)) return;
+        InteractionHand hand = null;
+        if (mc.player.getMainHandItem().is(ominous ? Items.OMINOUS_TRIAL_KEY : Items.TRIAL_KEY))
+            hand = InteractionHand.MAIN_HAND;
+        else if (mc.player.getOffhandItem().is(ominous ? Items.OMINOUS_TRIAL_KEY : Items.TRIAL_KEY))
+            hand = InteractionHand.OFF_HAND;
+        if (hand == null) {
+            // Don't spam chat each tick while waiting for a key.
+            if (System.nanoTime() - lastNoticeAt > 5_000_000_000L) {
+                lastNoticeAt = System.nanoTime();
+                say("§e目标已出现，但主手/副手没有" + (ominous ? "不祥" : "普通") + "试炼钥匙；未操作");
+            }
+            return;
+        }
+        attemptedVaults.add(key); // mark BEFORE interaction to prevent duplicate requests
+        long delayMs = Math.max(0L, (System.nanoTime() - observedAtNano) / 1_000_000L);
+        log("AUTO_INTERACT_SENT", dimension, pos, ominous, id, state,
+                "hand=" + hand + ";display_age_ms=" + delayMs, "client_interaction_not_loot_confirmation");
+        try {
+            mc.gameMode.useItemOn(mc.player, hand, blockHit);
+            mc.player.swing(hand);
+            say("§a已向服务器发送" + (ominous ? "不祥" : "普通") + "宝库交互请求；目标=" + id + "；展示延迟≈" + delayMs + "ms（非中奖保证）");
+        } catch (RuntimeException e) {
+            log("AUTO_INTERACT_ERROR", dimension, pos, ominous, id, state, e.toString(), "client_error");
+            say("§c开锁交互发生错误：" + e.getClass().getSimpleName());
+        }
+    }
+
+    private int setTarget(boolean ominous, String item) {
+        String id = item.contains(":") ? item.toLowerCase(Locale.ROOT) : "minecraft:" + item.toLowerCase(Locale.ROOT);
+        boolean found = false;
+        for (var entry : BuiltInRegistries.ITEM) {
+            if (BuiltInRegistries.ITEM.getKey(entry).toString().equals(id)) { found = true; break; }
+        }
+        if (!found || id.equals("minecraft:air")) { say("物品 ID 不存在：" + id); return 0; }
+        if (ominous) ominousTarget = id; else normalTarget = id;
+        saveSettings();
+        say((ominous ? "不祥" : "普通") + "宝库目标已改为 " + id);
+        return 1;
+    }
+
+    private void loadSettings() {
+        try {
+            Path file = root.resolve("settings.properties");
+            if (!Files.isRegularFile(file)) return;
+            Properties p = new Properties();
+            try (var in = Files.newInputStream(file)) { p.load(in); }
+            enabled = Boolean.parseBoolean(p.getProperty("monitor_enabled", "true"));
+            // Never automatically enable after restart: prevent accidental key consumption.
+            autoEnabled = false;
+            normalTarget = p.getProperty("normal_target", "minecraft:emerald");
+            ominousTarget = p.getProperty("ominous_target", "minecraft:heavy_core");
+        } catch (Exception e) { System.err.println("[VaultAssist] Cannot load settings: " + e); }
+    }
+    private void saveSettings() {
+        try {
+            Files.createDirectories(root);
+            Properties p = new Properties();
+            p.setProperty("monitor_enabled", Boolean.toString(enabled));
+            p.setProperty("normal_target", normalTarget);
+            p.setProperty("ominous_target", ominousTarget);
+            try (var out = Files.newOutputStream(root.resolve("settings.properties"))) {
+                p.store(out, "Vault Assist 26.2 settings; auto mode always starts OFF");
+            }
+        } catch (IOException e) { System.err.println("[VaultAssist] Cannot save settings: " + e); }
     }
 
     private void clearObservation() {
@@ -144,7 +231,8 @@ public final class VaultAssistClient implements ClientModInitializer {
     }
 
     private int status() {
-        say("模式=只提示/手动开锁；启用=" + enabled + "；目标=沉重核心；普通+不祥宝库");
+        say("监控=" + enabled + "；自动开锁=" + autoEnabled + "；普通目标=" + normalTarget + "；不祥目标=" + ominousTarget);
+        say("手持匹配钥匙并对准宝库；同一宝库本次游戏只尝试一次。/vaultassist auto on|off");
         if (pending != null) say("待确认开锁：" + pending.sessionId + "，展示=" + pending.shownId);
         return 1;
     }

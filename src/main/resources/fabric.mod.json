@@ -3,7 +3,7 @@
   "id": "vaultassist",
   "version": "${version}",
   "name": "Vault Assist",
-  "description": "Client-side display-item reminder and manually verified vault outcome logger.",
+  "description": "Client-side configurable target watcher, opt-in auto-open with held trial key, and outcome log.",
   "authors": ["Vault Assist Project"],
   "environment": "client",
   "entrypoints": {

@@ -1,55 +1,40 @@
-# Vault Assist v0.1.1 — Minecraft 26.2 / Fabric
+# Vault Assist v0.2.0 — Minecraft 26.2 Fabric
 
-**模式：沉重核心提示 + 玩家手动开锁。** 支持普通宝库和不祥宝库。客户端不自动使用钥匙、不发送额外交互包。
+源自已经在用户 26.2 客户端成功加载/监控的 v0.1.4。
 
-## 用法
+## 功能
+- 普通宝库默认 `minecraft:emerald`，不祥宝库默认 `minecraft:heavy_core`。
+- 对准宝库，目标出现在服务端同步的展示物品里时，自动发出一次原版右键交互。
+- 仅在 `/vaultassist auto on` 之后自动开锁；重启游戏自动模式恢复 OFF。
+- 需要对应试炼钥匙在主手或副手；不会自动切换背包物品。
+- 每个维度+坐标的宝库每次游戏仅发送一次自动交互，防止连点重复消耗。
+- 开锁实际掉落由服务器独立决定，展示物品 **不保证** 开出。日志记录客户端观察与发包时间。
 
-1. 安装 Minecraft **26.2**、Fabric Loader 0.19.5 或更新兼容版、相应版本 Fabric API。
-2. 将编译好的 `vault-assist-26.2-0.1.0.jar` 放到 `.minecraft/mods/`。
-3. 对准宝库，看屏幕下方的展示物品提示。展示沉重核心时会变绿，**自己决定是否右键**。
-4. 开锁后仍然对准该宝库，直到模组观察到 `UNLOCKING` 状态变化；到奖励弹出、拾取完成后判断结果。
-5. 若 **该次开锁最终奖励包含沉重核心**，输入 `/vaultassist hit`；否则输入 `/vaultassist miss`；无法确定就用 `/vaultassist skip`。
-6. `/vaultassist stats` 查看仅包含人工确认的命中率；`/vaultassist status` 状态；`/vaultassist on` 和 `/vaultassist off` 控制提示；`/vaultassist note 文本` 写 CSV 备注。
+## 命令
+```
+/vaultassist status
+/vaultassist on
+/vaultassist off
+/vaultassist auto on
+/vaultassist auto off
+/vaultassist target normal minecraft:emerald
+/vaultassist target ominous minecraft:heavy_core
+/vaultassist target normal minecraft:diamond
+/vaultassist resetattempts
+/vaultassist stats
+/vaultassist hit
+/vaultassist miss
+/vaultassist skip
+/vaultassist note <文字>
+```
 
-**特别重要：** `/vaultassist hit` 代表“实际奖励出现沉重核心”，不代表“展示物品与奖励必然相同”。若统计的是展示命中率，请仅在开锁前展示沉重核心的情况下做实验，其他试验单独用备注区分。本版没有可靠的自动归属识别：旁人开锁可能触发观察事件。不要确认非自己的开锁，直接 skip。
+配置：`.minecraft/config/vaultassist/settings.properties`。日志：`events.csv`。原有人工核对命中率机制保留，`hit`/`miss` 含义仍是人工确认沉重核心；普通宝库开锁请勿用它统计绿宝石命中率。
 
-## 日志
+## 已知限制
+- 不自动从背包取钥匙，必须主手/副手持钥匙。
+- 自动操作请求发送后，服务器可能拒绝（例如此宝库已开过、距离或权限问题）。
+- 每个坐标本次客户端会话只尝试一次；需要重新测试可用 `/vaultassist resetattempts`，可能再次发送交互。
+- 本源码构建尚未在本机 Java 25 环境实际执行，先由 GitHub Actions 编译验证。
 
-- `.minecraft/config/vaultassist/events.csv`：展示变化、目标出现、开锁状态、人工确认、备注，包含 UTC、Unix 毫秒、客户端单调时钟纳秒、维度、坐标、类型、物品等。
-- `.minecraft/config/vaultassist/stats.properties`：确认总次数/命中/未命中，重启保留。
-- 本版的 `UNLOCK_OBSERVED` 是**客户端看到开锁状态**的时刻，不是右键发包时刻；`DISPLAY` 是客户端获知展示内容时刻，不是服务器抽取时刻。两者不能直接用于测量服务端网络延迟。
-- 记录实际奖励必须人工确认；不读取服务端随机种子、隐藏战利品表或 `items_to_eject`。
-
-## 编译
-
-直接把整个源码 ZIP 上传到 GitHub 仓库解压后的根目录，推送 `main`，打开 **Actions → Build Fabric 26.2 → Run workflow**，构建成功后下载 Artifact。
-
-v0.1.1 修复 Gradle 配置：Minecraft 26.2 非混淆 Loom 插件使用 `implementation` 而不是 `modImplementation`，解决 `Could not find method modImplementation()`。
-
-本工程使用 Gradle **9.7.1**、Java **25**、Fabric Loom **1.18.2**，预设 Fabric API **0.162.0+26.2**。本地有 Gradle 的话执行 `gradle build`，结果位于 `build/libs/`。源码包不包含 Gradle Wrapper；GitHub Actions 会自动安装正确版本 Gradle。
-
-**开发验证情况：** 源码已打包并做文件/结构检查，但当前打包环境只有 JDK 21 且没有可用的外部 Maven 网络，**尚未完成 Java 25 + Minecraft 26.2 依赖的真实编译/进服测试**。如果 Actions 报错，提供日志可据此修复。本版是测试版，不保证在 EarthMC 特定插件环境下能监听到全部状态切换。
-
-## 机制说明
-
-展示物品从客户端同步的 `VaultBlockEntity.getSharedData().getDisplayItem()` 读取。根据 Minecraft 26.2 原版源码，真正开锁时由服务端执行独立奖励表生成，不能保证当前展示物品就是最终掉落。日志用于实测，而非宣称可预测结果。
-
-
-
-## v0.1.2 编译兼容修复
-- Fabric 客户端命令改用 `ClientCommands`。
-- Minecraft 26.2 的界面检测改用 `mc.gui.screen()`。
-- 动作栏使用 `mc.gui.setOverlayMessage()`，聊天输出使用 `mc.gui.getChat().addMessage()`。
-- 维度记录使用 `ResourceKey.toString()`，不再调用已不存在的 `location()`。
-- 此版本未在 GitHub Actions 中实际编译验证。
-
-
-## v0.1.4 兼容修复
-参考 EarthMC Market v0.5.50 中已使用的 `mc.player.sendSystemMessage(Component.literal(...))`，移除在 26.2 无法编译的 `mc.gui.setOverlayMessage` 和 `mc.gui.getChat()` 调用。提示改为仅在展示物品变化时向客户端聊天栏显示（不刷屏）；仍是纯提示，不会自动开锁。此次修复尚未通过完整 Gradle 编译与进服测试。
-
-
-## v0.1.4 26.2 port
-- Dependency versions aligned with supplied EarthMC Market 26.2 project.
-- Fabric API command and chat calls kept consistent with that project.
-- Build not verified locally; GitHub Actions will compile on JDK 25.
-- Minecraft version in fabric.mod.json is strictly 26.2.
+## 上传编译
+GitHub 仓库解压覆盖后：`git add . && git commit -m "Vault Assist 0.2 auto open" && git push`。Actions 自动运行，成功后下载 Artifact 中的 JAR。
