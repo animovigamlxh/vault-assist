@@ -121,7 +121,7 @@ public final class VaultAssistClient implements ClientModInitializer {
         observedItem = id;
         observedState = state;
         observedOminous = ominous;
-        // 26.3: prefer LocalPlayer.sendSystemMessage(), as used by the user's
+        // 26.2: use LocalPlayer.sendSystemMessage(), as used by the user's
         // already-working EarthMC Market project. Do not call obsolete Gui methods.
         // Notify on changes only, avoiding chat spam during a steady display.
         if (visible.is(Items.HEAVY_CORE)) {

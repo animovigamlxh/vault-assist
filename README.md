@@ -1,11 +1,11 @@
-# Vault Assist v0.1.1 — Minecraft 26.3 / Fabric
+# Vault Assist v0.1.1 — Minecraft 26.2 / Fabric
 
 **模式：沉重核心提示 + 玩家手动开锁。** 支持普通宝库和不祥宝库。客户端不自动使用钥匙、不发送额外交互包。
 
 ## 用法
 
-1. 安装 Minecraft **26.3**、Fabric Loader 0.19.5 或更新兼容版、相应版本 Fabric API。
-2. 将编译好的 `vault-assist-26.3-0.1.0.jar` 放到 `.minecraft/mods/`。
+1. 安装 Minecraft **26.2**、Fabric Loader 0.19.5 或更新兼容版、相应版本 Fabric API。
+2. 将编译好的 `vault-assist-26.2-0.1.0.jar` 放到 `.minecraft/mods/`。
 3. 对准宝库，看屏幕下方的展示物品提示。展示沉重核心时会变绿，**自己决定是否右键**。
 4. 开锁后仍然对准该宝库，直到模组观察到 `UNLOCKING` 状态变化；到奖励弹出、拾取完成后判断结果。
 5. 若 **该次开锁最终奖励包含沉重核心**，输入 `/vaultassist hit`；否则输入 `/vaultassist miss`；无法确定就用 `/vaultassist skip`。
@@ -22,27 +22,34 @@
 
 ## 编译
 
-直接把整个源码 ZIP 上传到 GitHub 仓库解压后的根目录，推送 `main`，打开 **Actions → Build Fabric 26.3 → Run workflow**，构建成功后下载 Artifact。
+直接把整个源码 ZIP 上传到 GitHub 仓库解压后的根目录，推送 `main`，打开 **Actions → Build Fabric 26.2 → Run workflow**，构建成功后下载 Artifact。
 
-v0.1.1 修复 Gradle 配置：Minecraft 26.3 非混淆 Loom 插件使用 `implementation` 而不是 `modImplementation`，解决 `Could not find method modImplementation()`。
+v0.1.1 修复 Gradle 配置：Minecraft 26.2 非混淆 Loom 插件使用 `implementation` 而不是 `modImplementation`，解决 `Could not find method modImplementation()`。
 
-本工程使用 Gradle **9.7.1**、Java **25**、Fabric Loom **1.18.2**，预设 Fabric API **0.162.0+26.3**。本地有 Gradle 的话执行 `gradle build`，结果位于 `build/libs/`。源码包不包含 Gradle Wrapper；GitHub Actions 会自动安装正确版本 Gradle。
+本工程使用 Gradle **9.7.1**、Java **25**、Fabric Loom **1.18.2**，预设 Fabric API **0.162.0+26.2**。本地有 Gradle 的话执行 `gradle build`，结果位于 `build/libs/`。源码包不包含 Gradle Wrapper；GitHub Actions 会自动安装正确版本 Gradle。
 
-**开发验证情况：** 源码已打包并做文件/结构检查，但当前打包环境只有 JDK 21 且没有可用的外部 Maven 网络，**尚未完成 Java 25 + Minecraft 26.3 依赖的真实编译/进服测试**。如果 Actions 报错，提供日志可据此修复。本版是测试版，不保证在 EarthMC 特定插件环境下能监听到全部状态切换。
+**开发验证情况：** 源码已打包并做文件/结构检查，但当前打包环境只有 JDK 21 且没有可用的外部 Maven 网络，**尚未完成 Java 25 + Minecraft 26.2 依赖的真实编译/进服测试**。如果 Actions 报错，提供日志可据此修复。本版是测试版，不保证在 EarthMC 特定插件环境下能监听到全部状态切换。
 
 ## 机制说明
 
-展示物品从客户端同步的 `VaultBlockEntity.getSharedData().getDisplayItem()` 读取。根据 Minecraft 26.3 原版源码，真正开锁时由服务端执行独立奖励表生成，不能保证当前展示物品就是最终掉落。日志用于实测，而非宣称可预测结果。
+展示物品从客户端同步的 `VaultBlockEntity.getSharedData().getDisplayItem()` 读取。根据 Minecraft 26.2 原版源码，真正开锁时由服务端执行独立奖励表生成，不能保证当前展示物品就是最终掉落。日志用于实测，而非宣称可预测结果。
 
 
 
 ## v0.1.2 编译兼容修复
 - Fabric 客户端命令改用 `ClientCommands`。
-- Minecraft 26.3 的界面检测改用 `mc.gui.screen()`。
+- Minecraft 26.2 的界面检测改用 `mc.gui.screen()`。
 - 动作栏使用 `mc.gui.setOverlayMessage()`，聊天输出使用 `mc.gui.getChat().addMessage()`。
 - 维度记录使用 `ResourceKey.toString()`，不再调用已不存在的 `location()`。
 - 此版本未在 GitHub Actions 中实际编译验证。
 
 
-## v0.1.3 兼容修复
-参考 EarthMC Market v0.5.50 中已使用的 `mc.player.sendSystemMessage(Component.literal(...))`，移除在 26.3 无法编译的 `mc.gui.setOverlayMessage` 和 `mc.gui.getChat()` 调用。提示改为仅在展示物品变化时向客户端聊天栏显示（不刷屏）；仍是纯提示，不会自动开锁。此次修复尚未通过完整 Gradle 编译与进服测试。
+## v0.1.4 兼容修复
+参考 EarthMC Market v0.5.50 中已使用的 `mc.player.sendSystemMessage(Component.literal(...))`，移除在 26.2 无法编译的 `mc.gui.setOverlayMessage` 和 `mc.gui.getChat()` 调用。提示改为仅在展示物品变化时向客户端聊天栏显示（不刷屏）；仍是纯提示，不会自动开锁。此次修复尚未通过完整 Gradle 编译与进服测试。
+
+
+## v0.1.4 26.2 port
+- Dependency versions aligned with supplied EarthMC Market 26.2 project.
+- Fabric API command and chat calls kept consistent with that project.
+- Build not verified locally; GitHub Actions will compile on JDK 25.
+- Minecraft version in fabric.mod.json is strictly 26.2.

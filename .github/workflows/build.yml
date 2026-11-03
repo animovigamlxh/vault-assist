@@ -1,4 +1,4 @@
-name: Build Fabric 26.3
+name: Build Fabric 26.2
 on:
   workflow_dispatch:
   push:
@@ -15,10 +15,13 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.7.1'
+          gradle-version: '9.5.1'
       - name: Build
         run: gradle build --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: vault-assist-26.3-jar
-          path: build/libs/*.jar
+          name: vault-assist-26.2-jar
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+            !build/libs/*-dev.jar
