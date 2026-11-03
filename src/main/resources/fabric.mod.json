@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "vaultassist",
+  "version": "${version}",
+  "name": "Vault Assist",
+  "description": "Client-side display-item reminder and manually verified vault outcome logger.",
+  "authors": ["Vault Assist Project"],
+  "environment": "client",
+  "entrypoints": {
+    "client": ["io.github.vaultassist.VaultAssistClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
