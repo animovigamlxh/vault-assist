@@ -25,8 +25,8 @@ import java.time.Instant;
 import java.util.Locale;
 import java.util.Properties;
 
-import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
-import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
+import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 /**
  * All observations come from server-synchronised CLIENT state. The mod never issues
@@ -80,7 +80,7 @@ public final class VaultAssistClient implements ClientModInitializer {
 
     private void tick(Minecraft mc) {
         if (mc.level == null || mc.player == null) { clearObservation(); return; }
-        if (!enabled || mc.screen != null) return;
+        if (!enabled || mc.gui.screen() != null) return;
         ticks++;
         HitResult hit = mc.hitResult;
         if (!(hit instanceof BlockHitResult blockHit) || hit.getType() != HitResult.Type.BLOCK) {
@@ -94,7 +94,7 @@ public final class VaultAssistClient implements ClientModInitializer {
             clearObservation();
             return;
         }
-        String dim = mc.level.dimension().location().toString();
+        String dim = mc.level.dimension().toString();
         boolean ominous = blockState.getValue(VaultBlock.OMINOUS);
         ItemStack visible = vault.getSharedData().getDisplayItem();
         String id = visible.isEmpty() ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(visible.getItem()).toString();
@@ -122,13 +122,13 @@ public final class VaultAssistClient implements ClientModInitializer {
         observedState = state;
         observedOminous = ominous;
         if (visible.is(Items.HEAVY_CORE) && (changed || now - lastNoticeAt > 1_000_000_000L)) {
-            mc.player.displayClientMessage(Component.literal("§a[宝库助手] 展示：沉重核心！ §e请手动使用钥匙 §7(" +
-                    (ominous ? "不祥" : "普通") + "宝库)"), true);
+            mc.gui.setOverlayMessage(Component.literal("§a[宝库助手] 展示：沉重核心！ §e请手动使用钥匙 §7(" +
+                    (ominous ? "不祥" : "普通") + "宝库)"), false);
             lastNoticeAt = now;
             if (changed) log("TARGET_VISIBLE", dim, pos, ominous, id, state, "", "hint_only");
         } else if (ticks % 20 == 0) {
-            mc.player.displayClientMessage(Component.literal("§7[宝库助手] " + (ominous ? "不祥" : "普通") +
-                    "宝库展示：" + id + " §8(只提示，不自动开锁)"), true);
+            mc.gui.setOverlayMessage(Component.literal("§7[宝库助手] " + (ominous ? "不祥" : "普通") +
+                    "宝库展示：" + id + " §8(只提示，不自动开锁)"), false);
         }
     }
 
@@ -184,7 +184,7 @@ public final class VaultAssistClient implements ClientModInitializer {
 
     private void say(String s) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player != null) mc.player.displayClientMessage(Component.literal(PREFIX + s), false);
+        if (mc.player != null) mc.gui.getChat().addMessage(Component.literal(PREFIX + s));
     }
 
     private void loadStats() {

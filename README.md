@@ -34,3 +34,11 @@ v0.1.1 修复 Gradle 配置：Minecraft 26.3 非混淆 Loom 插件使用 `implem
 
 展示物品从客户端同步的 `VaultBlockEntity.getSharedData().getDisplayItem()` 读取。根据 Minecraft 26.3 原版源码，真正开锁时由服务端执行独立奖励表生成，不能保证当前展示物品就是最终掉落。日志用于实测，而非宣称可预测结果。
 
+
+
+## v0.1.2 编译兼容修复
+- Fabric 客户端命令改用 `ClientCommands`。
+- Minecraft 26.3 的界面检测改用 `mc.gui.screen()`。
+- 动作栏使用 `mc.gui.setOverlayMessage()`，聊天输出使用 `mc.gui.getChat().addMessage()`。
+- 维度记录使用 `ResourceKey.toString()`，不再调用已不存在的 `location()`。
+- 此版本未在 GitHub Actions 中实际编译验证。
