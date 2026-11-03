@@ -42,3 +42,7 @@ v0.1.1 修复 Gradle 配置：Minecraft 26.3 非混淆 Loom 插件使用 `implem
 - 动作栏使用 `mc.gui.setOverlayMessage()`，聊天输出使用 `mc.gui.getChat().addMessage()`。
 - 维度记录使用 `ResourceKey.toString()`，不再调用已不存在的 `location()`。
 - 此版本未在 GitHub Actions 中实际编译验证。
+
+
+## v0.1.3 兼容修复
+参考 EarthMC Market v0.5.50 中已使用的 `mc.player.sendSystemMessage(Component.literal(...))`，移除在 26.3 无法编译的 `mc.gui.setOverlayMessage` 和 `mc.gui.getChat()` 调用。提示改为仅在展示物品变化时向客户端聊天栏显示（不刷屏）；仍是纯提示，不会自动开锁。此次修复尚未通过完整 Gradle 编译与进服测试。

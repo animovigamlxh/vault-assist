@@ -121,14 +121,18 @@ public final class VaultAssistClient implements ClientModInitializer {
         observedItem = id;
         observedState = state;
         observedOminous = ominous;
-        if (visible.is(Items.HEAVY_CORE) && (changed || now - lastNoticeAt > 1_000_000_000L)) {
-            mc.gui.setOverlayMessage(Component.literal("§a[宝库助手] 展示：沉重核心！ §e请手动使用钥匙 §7(" +
-                    (ominous ? "不祥" : "普通") + "宝库)"), false);
-            lastNoticeAt = now;
-            if (changed) log("TARGET_VISIBLE", dim, pos, ominous, id, state, "", "hint_only");
-        } else if (ticks % 20 == 0) {
-            mc.gui.setOverlayMessage(Component.literal("§7[宝库助手] " + (ominous ? "不祥" : "普通") +
-                    "宝库展示：" + id + " §8(只提示，不自动开锁)"), false);
+        // 26.3: prefer LocalPlayer.sendSystemMessage(), as used by the user's
+        // already-working EarthMC Market project. Do not call obsolete Gui methods.
+        // Notify on changes only, avoiding chat spam during a steady display.
+        if (visible.is(Items.HEAVY_CORE)) {
+            if (changed) {
+                mc.player.sendSystemMessage(Component.literal("§a[宝库助手] 展示：沉重核心！ §e请手动使用钥匙 §7(" +
+                        (ominous ? "不祥" : "普通") + "宝库)"));
+                log("TARGET_VISIBLE", dim, pos, ominous, id, state, "", "hint_only");
+            }
+        } else if (changed) {
+            mc.player.sendSystemMessage(Component.literal("§7[宝库助手] " + (ominous ? "不祥" : "普通") +
+                    "宝库展示：" + id + " §8(只提示，不自动开锁)"));
         }
     }
 
@@ -184,7 +188,7 @@ public final class VaultAssistClient implements ClientModInitializer {
 
     private void say(String s) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player != null) mc.gui.getChat().addMessage(Component.literal(PREFIX + s));
+        if (mc.player != null) mc.player.sendSystemMessage(Component.literal(PREFIX + s));
     }
 
     private void loadStats() {
